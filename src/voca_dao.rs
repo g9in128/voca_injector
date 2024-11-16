@@ -15,7 +15,7 @@ impl VocaDao {
         let _ = fs::create_dir_all("target/dbs");
         let conn = Connection::open("target/dbs/vocabulary.sqlite").expect("Database Open Fail!");
 
-        let dao = VocaDao {
+        let mut dao = VocaDao {
             connection: conn,
             vocas: HashMap::new(),
             dicts: HashMap::new(),
@@ -55,6 +55,9 @@ impl VocaDao {
     }
 
     fn fetch_data_from_db(&mut self) {
+        self.vocas.clear();
+        self.dicts.clear();
+
         let mut stmt = self
             .connection
             .prepare("SELECT num,eng,kor FROM vocabularies")
@@ -88,21 +91,19 @@ impl VocaDao {
             .unwrap();
         for tag in tags {
             let tag = tag.unwrap();
-            let mut voca = self.vocas.get_mut(&tag.0).unwrap();
+            let voca = self.vocas.get_mut(&tag.0).unwrap();
             voca.tags.push(tag.1);
         }
 
         for voca in self.vocas.values() {
             for tag in voca.tags.clone() {
-                let dict: &Dict;
-                if (self.dicts.contains_key(&tag)) {
-                    dict = self.dicts.get(&tag).unwrap();
-                } else {
+                let dict: &mut Dict;
+                if (!self.dicts.contains_key(&tag)) {
                     let dict2 = Dict::new(&tag);
-                    dict = &dict2;
-                    self.dicts.insert(tag, dict2);
+                    self.dicts.insert(tag.clone(), dict2);
                 }
-                todo!(); //여기부터
+                dict = self.dicts.get_mut(&tag).unwrap();
+                dict.vocas.push(voca.num);
             }
         }
     }
@@ -121,5 +122,42 @@ impl VocaDao {
                 .connection
                 .execute("INSERT INTO tags VALUES (?1,?2)", params![voca.num, tag]);
         }
+    }
+
+    pub fn get_voca_eng(&self, eng: &str) -> Box<[&Voca]> {
+        let mut vocas: Vec<&Voca> = vec![];
+        for (_i, voca) in &self.vocas {
+            if (voca.eng == eng) {
+                vocas.push(voca);
+            }
+        }
+        vocas.into_boxed_slice()
+    }
+
+    pub fn get_voca_kor(&self, kor: &str) -> Box<[&Voca]> {
+        let mut vocas: Vec<&Voca> = vec![];
+        for (_i, voca) in &self.vocas {
+            if (voca.kor == kor) {
+                vocas.push(voca);
+            }
+        }
+        vocas.into_boxed_slice()
+    }
+
+    pub fn get_voca_tag(&self, tag: &str) -> Box<[&Voca]> {
+        let mut vocas: Vec<&Voca> = vec![];
+        let dict = self.dicts.get(tag);
+        let tags = match dict {
+            Some(tag) => &tag.vocas,
+            None => &vec![],
+        };
+        for tag in tags {
+            vocas.push(self.get_voca_num(*tag).expect("Tag MisMatch!"));
+        }
+        vocas.into_boxed_slice()
+    }
+
+    fn get_voca_num(&self, num: usize) -> Option<&Voca> {
+        self.vocas.get(&num)
     }
 }
